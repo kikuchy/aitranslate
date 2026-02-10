@@ -1,0 +1,76 @@
+import 'package:aitranslate/aitranslate.dart';
+import 'package:flutter/material.dart';
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final controller = TranslationController(
+    sourceLanguage: 'ja',
+    backend: MlKitTranslationBackend(
+      sourceLanguage: TranslateLanguage.japanese,
+      targetLanguage: TranslateLanguage.english,
+    ),
+  );
+
+  runApp(TranslationProvider(controller: controller, child: const MyApp()));
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: tr(context, 'フラッターデモ'),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      ),
+      home: const MyHomePage(),
+    );
+  }
+}
+
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key});
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
+
+  void _incrementCounter() {
+    setState(() {
+      _counter++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text(tr(context, 'フラッターデモ ホームページ')),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(tr(context, 'ボタンを押した回数:')),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: tr(context, '増やす'),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
