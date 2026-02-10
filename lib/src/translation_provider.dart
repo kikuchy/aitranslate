@@ -7,7 +7,7 @@ import 'translation_controller.dart';
 /// Wrap your app with this widget to enable `tr()` throughout the tree:
 /// ```dart
 /// runApp(TranslationProvider(
-///   controller: TranslationController(backend: MlKitTranslationBackend(...)),
+///   controller: TranslationController(backend: MlKitTranslationBackend()),
 ///   child: MyApp(),
 /// ));
 /// ```

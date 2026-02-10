@@ -6,41 +6,54 @@ import 'translation_backend.dart';
 ///
 /// Automatically downloads required language models on first use.
 class MlKitTranslationBackend implements TranslationBackend {
-  MlKitTranslationBackend({
-    required TranslateLanguage sourceLanguage,
-    required TranslateLanguage targetLanguage,
-  }) : _sourceLanguage = sourceLanguage,
-       _targetLanguage = targetLanguage;
-
-  final TranslateLanguage _sourceLanguage;
-  final TranslateLanguage _targetLanguage;
+  MlKitTranslationBackend();
 
   OnDeviceTranslator? _translator;
+  TranslateLanguage? _currentSource;
+  TranslateLanguage? _currentTarget;
   bool _isReady = false;
 
-  @override
-  Future<void> ensureReady() async {
-    if (_isReady) return;
+  Future<void> _ensureReady(
+    TranslateLanguage source,
+    TranslateLanguage target,
+  ) async {
+    if (_isReady && _currentSource == source && _currentTarget == target) {
+      return;
+    }
+
+    _isReady = false;
+    _translator?.close();
+    _translator = null;
 
     final modelManager = OnDeviceTranslatorModelManager();
 
     // Download source model if needed.
-    final sourceCode = _sourceLanguage.bcpCode;
+    final sourceCode = source.bcpCode;
     if (!await modelManager.isModelDownloaded(sourceCode)) {
       await modelManager.downloadModel(sourceCode);
     }
 
     // Download target model if needed.
-    final targetCode = _targetLanguage.bcpCode;
+    final targetCode = target.bcpCode;
     if (!await modelManager.isModelDownloaded(targetCode)) {
       await modelManager.downloadModel(targetCode);
     }
 
     _translator = OnDeviceTranslator(
-      sourceLanguage: _sourceLanguage,
-      targetLanguage: _targetLanguage,
+      sourceLanguage: source,
+      targetLanguage: target,
     );
+    _currentSource = source;
+    _currentTarget = target;
     _isReady = true;
+  }
+
+  TranslateLanguage? _getTranslateLanguage(String bcpCode) {
+    try {
+      return TranslateLanguage.values.firstWhere((l) => l.bcpCode == bcpCode);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -49,7 +62,15 @@ class MlKitTranslationBackend implements TranslationBackend {
     required String from,
     required String to,
   }) async {
-    await ensureReady();
+    final sourceLang = _getTranslateLanguage(from);
+    final targetLang = _getTranslateLanguage(to);
+
+    if (sourceLang == null || targetLang == null) {
+      // Return original texts if language is not supported
+      return {for (final text in texts) text: text};
+    }
+
+    await _ensureReady(sourceLang, targetLang);
     final translator = _translator!;
 
     final results = <String, String>{};

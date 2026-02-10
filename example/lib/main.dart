@@ -1,16 +1,12 @@
 import 'package:aitranslate/aitranslate.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   final controller = TranslationController(
     sourceLanguage: 'ja',
-    backend: MlKitTranslationBackend(
-      sourceLanguage: TranslateLanguage.japanese,
-      targetLanguage: TranslateLanguage.english,
-    ),
+    backend: MlKitTranslationBackend(),
   );
 
   runApp(TranslationProvider(controller: controller, child: const MyApp()));

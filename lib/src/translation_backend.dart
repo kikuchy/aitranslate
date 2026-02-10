@@ -13,9 +13,6 @@ abstract class TranslationBackend {
     required String to,
   });
 
-  /// Ensures the backend is ready (e.g., models downloaded).
-  Future<void> ensureReady();
-
   /// Releases resources held by this backend.
   void dispose();
 }
