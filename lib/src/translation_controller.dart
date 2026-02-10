@@ -5,7 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'translation_backend.dart';
 
 /// Manages translation state, caching, and per-widget rebuild.
-class TranslationController {
+/// Manages translation state, caching, and per-widget rebuild.
+class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   /// Creates a translation controller.
   ///
   /// [sourceLanguage] is the BCP-47 code of the input text language
@@ -18,14 +19,42 @@ class TranslationController {
     String? targetLanguage,
   }) : _backend = backend,
        _sourceLanguage = sourceLanguage,
-       _targetLanguage = targetLanguage;
+       _targetLanguage = targetLanguage {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   final TranslationBackend _backend;
   final String _sourceLanguage;
-  final String? _targetLanguage;
+  String? _targetLanguage;
 
-  /// Cache of original text → translated text.
-  final Map<String, String> _cache = {};
+  /// Cache of translated texts, organized by target language.
+  /// Map<TargetLanguage, Map<OriginalText, TranslatedText>>
+  final Map<String, Map<String, String>> _cache = {};
+
+  /// Gets the current target language override.
+  String? get targetLanguage => _targetLanguage;
+
+  /// Sets the target language override.
+  ///
+  /// Setting this to a new value (or null) triggers a rebuild of all
+  /// widgets using [TranslationProvider] and re-translates content
+  /// for the new target language.
+  set targetLanguage(String? value) {
+    if (_targetLanguage != value) {
+      _targetLanguage = value;
+      notifyListeners();
+    }
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    super.didChangeLocales(locales);
+    // If we are using the system locale (targetLanguage is null),
+    // we need to notify listeners that the effective target has changed.
+    if (_targetLanguage == null) {
+      notifyListeners();
+    }
+  }
 
   /// Queued texts → set of Elements that need rebuild after translation.
   final Map<String, Set<Element>> _pendingElements = {};
@@ -48,9 +77,10 @@ class TranslationController {
     // If source and target are the same language, no translation needed.
     if (_sourceLanguage == _effectiveTarget) return text;
 
-    // Return cached translation if available.
-    if (_cache.containsKey(text)) {
-      return _cache[text]!;
+    // Check cache for the current target language.
+    final targetCache = _cache[_effectiveTarget];
+    if (targetCache != null && targetCache.containsKey(text)) {
+      return targetCache[text]!;
     }
 
     // Queue the text for translation and track the calling Element.
@@ -79,18 +109,26 @@ class TranslationController {
     _pendingElements.clear();
 
     final textsToTranslate = pending.keys.toList();
+    final currentTarget = _effectiveTarget;
 
     try {
       final results = await _backend.translateBatch(
         textsToTranslate,
         from: _sourceLanguage,
-        to: _effectiveTarget,
+        to: currentTarget,
       );
 
-      // Update cache and collect elements that need rebuild.
+      // Update cache for the specific target language.
+      // We must initialize the inner map if it doesn't exist.
+      if (!_cache.containsKey(currentTarget)) {
+        _cache[currentTarget] = {};
+      }
+      final targetCache = _cache[currentTarget]!;
+
+      // Collect elements that need rebuild.
       final elementsToRebuild = <Element>{};
       for (final entry in results.entries) {
-        _cache[entry.key] = entry.value;
+        targetCache[entry.key] = entry.value;
         final elements = pending[entry.key];
         if (elements != null) {
           elementsToRebuild.addAll(elements);
@@ -119,15 +157,19 @@ class TranslationController {
     }
   }
 
-  /// Clears the translation cache.
+  /// Clears the translation cache for all languages.
   void clearCache() {
     _cache.clear();
+    notifyListeners();
   }
 
   /// Disposes the controller and its backend.
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _backend.dispose();
     _cache.clear();
     _pendingElements.clear();
+    super.dispose();
   }
 }

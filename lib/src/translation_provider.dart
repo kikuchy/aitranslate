@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'translation_controller.dart';
 
-/// An [InheritedWidget] that provides [TranslationController] to the widget tree.
+/// An [InheritedNotifier] that provides [TranslationController] to the widget tree.
 ///
 /// Wrap your app with this widget to enable `tr()` throughout the tree:
 /// ```dart
@@ -11,15 +11,15 @@ import 'translation_controller.dart';
 ///   child: MyApp(),
 /// ));
 /// ```
-class TranslationProvider extends InheritedWidget {
+class TranslationProvider extends InheritedNotifier<TranslationController> {
   const TranslationProvider({
     super.key,
-    required this.controller,
+    required TranslationController controller,
     required super.child,
-  });
+  }) : super(notifier: controller);
 
   /// The translation controller managing translations for this subtree.
-  final TranslationController controller;
+  TranslationController get controller => notifier!;
 
   /// Returns the [TranslationController] from the nearest ancestor
   /// [TranslationProvider].
@@ -32,11 +32,6 @@ class TranslationProvider extends InheritedWidget {
       'Wrap your app with TranslationProvider.',
     );
     return provider!.controller;
-  }
-
-  @override
-  bool updateShouldNotify(TranslationProvider oldWidget) {
-    return controller != oldWidget.controller;
   }
 }
 
@@ -53,4 +48,8 @@ class TranslationProvider extends InheritedWidget {
 /// ```
 String tr(BuildContext context, String text) {
   return TranslationProvider.of(context).tr(context, text);
+}
+
+extension TranslationControllerExtension on BuildContext {
+  String tr(String text) => TranslationProvider.of(this).tr(this, text);
 }

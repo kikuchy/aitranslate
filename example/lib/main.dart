@@ -5,7 +5,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   final controller = TranslationController(
-    sourceLanguage: 'ja',
+    sourceLanguage: 'en',
     backend: GeminiTranslationBackend(
       apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
     ),
@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: tr(context, 'フラッターデモ'),
+      title: tr(context, 'Flutter Demo'),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -50,13 +50,13 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(tr(context, 'フラッターデモ ホームページ')),
+        title: Text(context.tr('Flutter Demo Home Page')),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(tr(context, 'ボタンを押した回数:')),
+            Text(context.tr('Number of times the button has been pressed:')),
             Text(
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
@@ -66,7 +66,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _incrementCounter,
-        tooltip: tr(context, '増やす'),
+        tooltip: context.tr('Increment'),
         child: const Icon(Icons.add),
       ),
     );

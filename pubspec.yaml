@@ -10,7 +10,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  google_mlkit_translation: ^0.13.1
   google_generative_ai: ^0.4.7
 
 dev_dependencies:

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'translation_backend.dart';
 
@@ -46,7 +47,7 @@ class GeminiTranslationBackend implements TranslationBackend {
       ),
       Content.text(jsonEncode(texts)),
     ];
-
+    debugPrint('prompt: ${prompt.first}');
     final response = await _model.generateContent(prompt);
     final responseText = response.text;
 
