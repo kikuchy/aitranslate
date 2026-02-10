@@ -6,7 +6,9 @@ void main() {
 
   final controller = TranslationController(
     sourceLanguage: 'ja',
-    backend: MlKitTranslationBackend(),
+    backend: GeminiTranslationBackend(
+      apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
+    ),
   );
 
   runApp(TranslationProvider(controller: controller, child: const MyApp()));

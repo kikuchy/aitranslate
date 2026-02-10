@@ -18,9 +18,6 @@ void main() {
 /// Minimal mock backend for unit tests.
 class _MockBackend implements TranslationBackend {
   @override
-  Future<void> ensureReady() async {}
-
-  @override
   Future<Map<String, String>> translateBatch(
     List<String> texts, {
     required String from,
