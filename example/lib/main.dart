@@ -1,7 +1,7 @@
 import 'package:aitranslate/aitranslate.dart';
 import 'package:flutter/material.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final controller = TranslationController(
@@ -23,7 +23,9 @@ void main() {
       apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
       errorHandler: exponentialBackoff(),
     ),
+    cacheStore: JsonFileCacheStore(),
   );
+  await controller.loadCache();
 
   runApp(TranslationProvider(controller: controller, child: const MyApp()));
 }

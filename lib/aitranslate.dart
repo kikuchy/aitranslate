@@ -1,5 +1,7 @@
 export 'src/error_handling.dart';
 export 'src/glossary_entry.dart';
+export 'src/json_file_cache_store.dart';
+export 'src/translation_cache_store.dart';
 export 'src/translation_backend.dart';
 export 'src/translation_context.dart';
 export 'src/translation_controller.dart';

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
 import 'glossary_entry.dart';
 import 'translation_backend.dart';
+import 'translation_cache_store.dart';
 import 'translation_context.dart';
 import 'translation_request_item.dart';
 
@@ -17,15 +19,24 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   /// output language. If null, the device's current locale is used.
   /// [globalContext] provides app-wide context to improve translation
   /// accuracy (e.g., describing the app's domain).
+  /// [cacheStore] optionally provides persistent storage for translations.
+  /// Call [loadCache] after construction to restore cached translations
+  /// before the first `build()`.
+  /// [saveDebounceDuration] controls how long to wait after the last
+  /// translation batch completes before persisting the cache to disk.
   TranslationController({
     required TranslationBackend backend,
     required String sourceLanguage,
     String? targetLanguage,
     TranslationContext? globalContext,
+    TranslationCacheStore? cacheStore,
+    Duration saveDebounceDuration = const Duration(seconds: 1),
   }) : _backend = backend,
        _sourceLanguage = sourceLanguage,
        _targetLanguage = targetLanguage,
-       _globalContext = globalContext {
+       _globalContext = globalContext,
+       _cacheStore = cacheStore,
+       _saveDebounceDuration = saveDebounceDuration {
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -33,6 +44,9 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   final String _sourceLanguage;
   String? _targetLanguage;
   final TranslationContext? _globalContext;
+  final TranslationCacheStore? _cacheStore;
+  final Duration _saveDebounceDuration;
+  Timer? _saveDebounceTimer;
 
   /// Cache of translated texts, organized by target language.
   /// `Map<TargetLanguage, Map<StableHashKey, TranslatedText>>`
@@ -60,6 +74,27 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
     // we need to notify listeners that the effective target has changed.
     if (_targetLanguage == null) {
       notifyListeners();
+    }
+  }
+
+  /// Loads persisted translations into the in-memory cache.
+  ///
+  /// Call this once after construction, before the first `build()` frame,
+  /// to restore previously translated texts:
+  /// ```dart
+  /// final controller = TranslationController(
+  ///   backend: myBackend,
+  ///   sourceLanguage: 'ja',
+  ///   cacheStore: JsonFileCacheStore(),
+  /// );
+  /// await controller.loadCache();
+  /// runApp(TranslationProvider(controller: controller, child: MyApp()));
+  /// ```
+  Future<void> loadCache() async {
+    if (_cacheStore == null) return;
+    final loaded = await _cacheStore.load();
+    for (final entry in loaded.entries) {
+      _cache.putIfAbsent(entry.key, () => {}).addAll(entry.value);
     }
   }
 
@@ -225,6 +260,7 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('Translation error: $e');
     } finally {
       _isProcessing = false;
+      _scheduleSave();
     }
 
     // Process any items that were queued during translation.
@@ -233,15 +269,45 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Schedules a debounced save after translation batches complete.
+  void _scheduleSave() {
+    if (_cacheStore == null) return;
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = Timer(_saveDebounceDuration, () {
+      _cacheStore.save(
+        _cache.map(
+          (lang, entries) => MapEntry(lang, Map<String, String>.from(entries)),
+        ),
+      );
+    });
+  }
+
   /// Clears the translation cache for all languages.
+  ///
+  /// Also clears the persisted cache if a [TranslationCacheStore] is set.
   void clearCache() {
     _cache.clear();
+    _saveDebounceTimer?.cancel();
+    _cacheStore?.clear();
     notifyListeners();
   }
 
   /// Disposes the controller and its backend.
   @override
   void dispose() {
+    // Flush any pending debounced save immediately.
+    if (_saveDebounceTimer?.isActive ?? false) {
+      _saveDebounceTimer!.cancel();
+      if (_cacheStore != null) {
+        _cacheStore.save(
+          _cache.map(
+            (lang, entries) =>
+                MapEntry(lang, Map<String, String>.from(entries)),
+          ),
+        );
+      }
+    }
+    _saveDebounceTimer = null;
     WidgetsBinding.instance.removeObserver(this);
     _backend.dispose();
     _cache.clear();
