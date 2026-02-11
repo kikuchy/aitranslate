@@ -5,3 +5,5 @@ export 'src/translation_controller.dart';
 export 'src/translation_provider.dart';
 export 'src/translation_request_item.dart';
 export 'src/gemini_translation_backend.dart';
+export 'src/openai_translation_backend.dart';
+export 'src/anthropic_translation_backend.dart';
