@@ -60,19 +60,67 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('tr with TranslationContext uses context for translation', (
+    tester,
+  ) async {
+    final backend = _MockBackend();
+    final controller = TranslationController(
+      sourceLanguage: 'en',
+      targetLanguage: 'ja',
+      backend: backend,
+    );
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        controller: controller,
+        child: Builder(
+          builder: (context) {
+            return Column(
+              textDirection: TextDirection.ltr,
+              children: [
+                Text(tr(context, 'Home'), textDirection: TextDirection.ltr),
+                Text(
+                  tr(
+                    context,
+                    'Home',
+                    translationContext: const TranslationContext(
+                      meaning: 'user address',
+                    ),
+                  ),
+                  textDirection: TextDirection.ltr,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+
+    // Initial build: both show original text
+    expect(find.text('Home'), findsNWidgets(2));
+
+    // Wait for translation to complete
+    await tester.pumpAndSettle();
+
+    // Both should be translated (mock backend prefixes with target language)
+    expect(find.text('translated_to_ja_Home'), findsAtLeastNWidgets(1));
+
+    controller.dispose();
+  });
 }
 
 /// Minimal mock backend for unit tests.
 class _MockBackend implements TranslationBackend {
   @override
-  Future<Map<String, String>> translateBatch(
-    List<String> texts, {
+  Future<List<String>> translateBatch(
+    List<TranslationRequestItem> items, {
     required String from,
     required String to,
   }) async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 50));
-    return {for (final t in texts) t: 'translated_to_${to}_$t'};
+    return items.map((item) => 'translated_to_${to}_${item.text}').toList();
   }
 
   @override

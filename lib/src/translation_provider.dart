@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'translation_context.dart';
 import 'translation_controller.dart';
 
 /// An [InheritedNotifier] that provides [TranslationController] to the widget tree.
@@ -42,14 +43,30 @@ class TranslationProvider extends InheritedNotifier<TranslationController> {
 /// the translation is in progress. Only the calling widget will be
 /// rebuilt when the translation completes.
 ///
+/// [translationContext] provides per-text context to improve accuracy.
+///
 /// Usage:
 /// ```dart
-/// Text(tr(context, "ボタン"))
+/// Text(tr(context, 'Button'))
+/// Text(tr(context, 'Home', translationContext: TranslationContext(meaning: 'home screen')))
 /// ```
-String tr(BuildContext context, String text) {
-  return TranslationProvider.of(context).tr(context, text);
+String tr(
+  BuildContext context,
+  String text, {
+  TranslationContext? translationContext,
+}) {
+  return TranslationProvider.of(
+    context,
+  ).tr(context, text, translationContext: translationContext);
 }
 
+/// Extension on [BuildContext] for convenient translation access.
 extension TranslationControllerExtension on BuildContext {
-  String tr(String text) => TranslationProvider.of(this).tr(this, text);
+  /// Translates [text] using the nearest [TranslationProvider].
+  ///
+  /// [translationContext] provides per-text context to improve accuracy.
+  String tr(String text, {TranslationContext? translationContext}) =>
+      TranslationProvider.of(
+        this,
+      ).tr(this, text, translationContext: translationContext);
 }

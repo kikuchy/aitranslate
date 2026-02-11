@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'translation_backend.dart';
+import 'translation_request_item.dart';
 
 /// Translation backend using the Google Gemini API.
 class GeminiTranslationBackend implements TranslationBackend {
@@ -16,38 +17,45 @@ class GeminiTranslationBackend implements TranslationBackend {
          generationConfig: GenerationConfig(
            responseMimeType: 'application/json',
            responseSchema: Schema.array(
-             description: 'List of translation results',
-             items: Schema.object(
-               properties: {
-                 'original': Schema.string(description: 'The original text'),
-                 'translated': Schema.string(
-                   description: 'The translated text',
-                 ),
-               },
-               requiredProperties: ['original', 'translated'],
-             ),
+             description: 'List of translated texts in order',
+             items: Schema.string(description: 'The translated text'),
            ),
          ),
        );
 
   @override
-  Future<Map<String, String>> translateBatch(
-    List<String> texts, {
+  Future<List<String>> translateBatch(
+    List<TranslationRequestItem> items, {
     required String from,
     required String to,
   }) async {
-    if (texts.isEmpty) {
-      return {};
+    if (items.isEmpty) {
+      return [];
     }
+
+    // Build a structured input that includes context when available.
+    final inputEntries = items.map((item) {
+      if (item.context != null) {
+        final ctx = item.context!;
+        final contextParts = <String>[];
+        if (ctx.description != null) contextParts.add(ctx.description!);
+        if (ctx.meaning != null) contextParts.add('meaning: ${ctx.meaning!}');
+        return {'text': item.text, 'context': contextParts.join(', ')};
+      }
+      return {'text': item.text};
+    }).toList();
 
     final prompt = [
       Content.text(
         'Translate the following texts from $from to $to. '
-        'Return the result as a JSON array of objects, where each object has "original" and "translated" fields.',
+        'Return the result as a JSON array of translated strings, '
+        'in the same order as the input. '
+        'If a "context" field is provided, use it to improve '
+        'translation accuracy, but do not include it in the output.',
       ),
-      Content.text(jsonEncode(texts)),
+      Content.text(jsonEncode(inputEntries)),
     ];
-    debugPrint('prompt: ${prompt.first}');
+    debugPrint('prompt: ${prompt.last}');
     final response = await _model.generateContent(prompt);
     final responseText = response.text;
 
@@ -57,25 +65,13 @@ class GeminiTranslationBackend implements TranslationBackend {
 
     try {
       final json = jsonDecode(responseText) as List<dynamic>;
-      final results = <String, String>{};
-      for (final item in json) {
-        if (item is Map<String, dynamic>) {
-          final original = item['original'] as String?;
-          final translated = item['translated'] as String?;
-          if (original != null && translated != null) {
-            results[original] = translated;
-          }
-        }
-      }
+      final results = json.cast<String>();
 
-      // Fill in any missing translations with original text (fallback)
-      for (final text in texts) {
-        if (!results.containsKey(text)) {
-          // If strict matching fails, we might want to log or handle it.
-          // For now, let's just keep what we have.
-          // Or maybe we should not fill it to indicate failure?
-          // The interface implies we return a map.
-        }
+      if (results.length != items.length) {
+        debugPrint(
+          'Warning: Expected ${items.length} translations, '
+          'got ${results.length}',
+        );
       }
 
       return results;
@@ -88,6 +84,6 @@ class GeminiTranslationBackend implements TranslationBackend {
 
   @override
   void dispose() {
-    // No resources to dispose for Gemini backend usually, but interface requires it.
+    // No resources to dispose for Gemini backend.
   }
 }

@@ -3,8 +3,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import 'translation_backend.dart';
+import 'translation_context.dart';
+import 'translation_request_item.dart';
 
-/// Manages translation state, caching, and per-widget rebuild.
 /// Manages translation state, caching, and per-widget rebuild.
 class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   /// Creates a translation controller.
@@ -13,22 +14,27 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   /// (e.g., "ja" for Japanese).
   /// [targetLanguage] optionally overrides the device locale for the
   /// output language. If null, the device's current locale is used.
+  /// [globalContext] provides app-wide context to improve translation
+  /// accuracy (e.g., describing the app's domain).
   TranslationController({
     required TranslationBackend backend,
     required String sourceLanguage,
     String? targetLanguage,
+    TranslationContext? globalContext,
   }) : _backend = backend,
        _sourceLanguage = sourceLanguage,
-       _targetLanguage = targetLanguage {
+       _targetLanguage = targetLanguage,
+       _globalContext = globalContext {
     WidgetsBinding.instance.addObserver(this);
   }
 
   final TranslationBackend _backend;
   final String _sourceLanguage;
   String? _targetLanguage;
+  final TranslationContext? _globalContext;
 
   /// Cache of translated texts, organized by target language.
-  /// Map<TargetLanguage, Map<OriginalText, TranslatedText>>
+  /// `Map<TargetLanguage, Map<StableHashKey, TranslatedText>>`
   final Map<String, Map<String, String>> _cache = {};
 
   /// Gets the current target language override.
@@ -56,7 +62,10 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Queued texts → set of Elements that need rebuild after translation.
+  /// Queued items: hash key → TranslationRequestItem.
+  final Map<String, TranslationRequestItem> _pendingItems = {};
+
+  /// Queued elements: hash key → set of Elements that need rebuild.
   final Map<String, Set<Element>> _pendingElements = {};
 
   bool _isProcessing = false;
@@ -67,25 +76,68 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   String get _effectiveTarget =>
       _targetLanguage ?? ui.PlatformDispatcher.instance.locale.languageCode;
 
+  /// Merges the global context with a per-text context.
+  ///
+  /// If both are null, returns null.
+  /// If only one is provided, returns that one.
+  /// If both are provided, merges their fields (per-text takes precedence).
+  TranslationContext? _mergeContext(TranslationContext? local) {
+    if (_globalContext == null && local == null) return null;
+    if (_globalContext == null) return local;
+    if (local == null) return _globalContext;
+
+    // Merge: local fields take precedence, fall back to global.
+    return TranslationContext(
+      description: [
+        if (_globalContext.description != null) _globalContext.description!,
+        if (local.description != null) local.description!,
+      ].join(' / '),
+      meaning: local.meaning ?? _globalContext.meaning,
+    );
+  }
+
+  /// Generates a stable cache key from text and context.
+  String _cacheKey(String text, TranslationContext? context) {
+    final input = context != null
+        ? '$text\x00${context.toStableString()}'
+        : text;
+    return stableHash(input);
+  }
+
   /// Returns the translated text if cached, otherwise queues the text
   /// for translation and returns the original text.
   ///
   /// After the current `build()` frame completes, all queued texts are
   /// translated in batch. Only the widgets that called `tr()` with
   /// newly translated texts will be rebuilt.
-  String tr(BuildContext context, String text) {
+  ///
+  /// [context] is the Flutter [BuildContext].
+  /// [text] is the text to translate.
+  /// [translationContext] is optional per-text context to improve accuracy.
+  String tr(
+    BuildContext context,
+    String text, {
+    TranslationContext? translationContext,
+  }) {
     // If source and target are the same language, no translation needed.
     if (_sourceLanguage == _effectiveTarget) return text;
 
+    final merged = _mergeContext(translationContext);
+    final key = _cacheKey(text, merged);
+
     // Check cache for the current target language.
     final targetCache = _cache[_effectiveTarget];
-    if (targetCache != null && targetCache.containsKey(text)) {
-      return targetCache[text]!;
+    if (targetCache != null && targetCache.containsKey(key)) {
+      return targetCache[key]!;
     }
 
     // Queue the text for translation and track the calling Element.
     final element = context as Element;
-    _pendingElements.putIfAbsent(text, () => {}).add(element);
+    _pendingItems.putIfAbsent(
+      key,
+      () => TranslationRequestItem(text: text, context: merged),
+    );
+    _pendingElements.putIfAbsent(key, () => {}).add(element);
 
     // Schedule post-frame callback to process the queue.
     if (!_frameCallbackScheduled) {
@@ -101,25 +153,29 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _processQueue() async {
-    if (_isProcessing || _pendingElements.isEmpty) return;
+    if (_isProcessing || _pendingItems.isEmpty) return;
     _isProcessing = true;
 
     // Take a snapshot of the current queue.
-    final pending = Map<String, Set<Element>>.from(_pendingElements);
+    final pendingItems = Map<String, TranslationRequestItem>.from(
+      _pendingItems,
+    );
+    final pendingElements = Map<String, Set<Element>>.from(_pendingElements);
+    _pendingItems.clear();
     _pendingElements.clear();
 
-    final textsToTranslate = pending.keys.toList();
+    final keys = pendingItems.keys.toList();
+    final items = pendingItems.values.toList();
     final currentTarget = _effectiveTarget;
 
     try {
       final results = await _backend.translateBatch(
-        textsToTranslate,
+        items,
         from: _sourceLanguage,
         to: currentTarget,
       );
 
       // Update cache for the specific target language.
-      // We must initialize the inner map if it doesn't exist.
       if (!_cache.containsKey(currentTarget)) {
         _cache[currentTarget] = {};
       }
@@ -127,9 +183,10 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
 
       // Collect elements that need rebuild.
       final elementsToRebuild = <Element>{};
-      for (final entry in results.entries) {
-        targetCache[entry.key] = entry.value;
-        final elements = pending[entry.key];
+      for (var i = 0; i < results.length && i < keys.length; i++) {
+        final key = keys[i];
+        targetCache[key] = results[i];
+        final elements = pendingElements[key];
         if (elements != null) {
           elementsToRebuild.addAll(elements);
         }
@@ -142,8 +199,11 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     } catch (e) {
-      // On failure, re-queue texts so they can be retried.
-      for (final entry in pending.entries) {
+      // On failure, re-queue items so they can be retried.
+      for (final entry in pendingItems.entries) {
+        _pendingItems.putIfAbsent(entry.key, () => entry.value);
+      }
+      for (final entry in pendingElements.entries) {
         _pendingElements.putIfAbsent(entry.key, () => {}).addAll(entry.value);
       }
       debugPrint('Translation error: $e');
@@ -152,7 +212,7 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Process any items that were queued during translation.
-    if (_pendingElements.isNotEmpty) {
+    if (_pendingItems.isNotEmpty) {
       _processQueue();
     }
   }
@@ -169,6 +229,7 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _backend.dispose();
     _cache.clear();
+    _pendingItems.clear();
     _pendingElements.clear();
     super.dispose();
   }

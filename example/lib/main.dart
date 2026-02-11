@@ -6,6 +6,7 @@ void main() {
 
   final controller = TranslationController(
     sourceLanguage: 'en',
+    globalContext: TranslationContext(description: 'Flutter Demo App'),
     backend: GeminiTranslationBackend(
       apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
     ),
@@ -61,12 +62,42 @@ class _MyHomePageState extends State<MyHomePage> {
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
+            SizedBox(height: 20),
+
+            // Description examples
+
+            // expected: "住所:" in Japanese
+            Text(
+              context.tr(
+                'Address:',
+                translationContext: TranslationContext(
+                  description: 'Address label',
+                  meaning: 'The place where you live',
+                ),
+              ),
+            ),
+            // expected: "アドレス:" in Japanese
+            Text(
+              context.tr(
+                'Address:',
+                translationContext: TranslationContext(
+                  description: 'Address label',
+                  meaning:
+                      'A unique identifier (a reference) that points to the location in memory',
+                ),
+              ),
+            ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _incrementCounter,
-        tooltip: context.tr('Increment'),
+        tooltip: context.tr(
+          'Increment',
+          translationContext: TranslationContext(
+            description: 'Tooltip label of increment button',
+          ),
+        ),
         child: const Icon(Icons.add),
       ),
     );
