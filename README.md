@@ -4,7 +4,7 @@
 
 `aitranslate` lets Flutter developers write UI labels in their own language and ship the app to every locale — without maintaining a single translation file.
 
-Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text with `context.tr()` and an AI backend (currently Google Gemini) translates it at runtime. The result is cached per locale, so each string is translated only once.
+Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text with `context.tr()` and an AI backend translates it at runtime. Translations are **cached per locale and persisted to disk**, so each string is translated only once — even across app restarts.
 
 ## Why aitranslate?
 
@@ -14,6 +14,8 @@ Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text wi
 | Coordinate with translators for each release | AI translates automatically at runtime |
 | Ambiguous terms produce wrong translations | Provide `meaning` and `description` per-text to disambiguate |
 | Brand names get mistranslated | Define a `glossary` to protect specific terms |
+| Translations lost on restart | Cache persisted to disk; instant display on relaunch |
+| Locked into one translation service | Swap backends (Gemini, OpenAI, Anthropic…) with one line |
 
 ## Quick Start
 
@@ -26,17 +28,19 @@ dependencies:
 import 'package:aitranslate/aitranslate.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  // Ensure Flutter binding is initialized
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the controller with a backend
   final controller = TranslationController(
-    sourceLanguage: 'en', // Language of the text to be translated
+    sourceLanguage: 'en', // Language of your source text
     backend: GeminiTranslationBackend(
       apiKey: 'YOUR_GEMINI_API_KEY',
     ),
+    cacheStore: JsonFileCacheStore(), // Persist translations to disk
   );
+
+  // Restore cached translations before the first frame
+  await controller.loadCache();
 
   runApp(
     TranslationProvider(
@@ -104,6 +108,26 @@ final controller = TranslationController(
 - **Global glossary** — set on `TranslationController` and applied to every translation.  
 - **Per-text glossary** — set on individual `tr()` calls; entries override the global glossary when the same term appears in both.
 
+## Persistent Cache
+
+Translations are expensive to generate but rarely change. `aitranslate` solves this with a **pluggable cache store**:
+
+```dart
+final controller = TranslationController(
+  sourceLanguage: 'en',
+  backend: GeminiTranslationBackend(apiKey: '...'),
+  cacheStore: JsonFileCacheStore(), // Built-in JSON file persistence
+);
+await controller.loadCache(); // Restore before first build
+```
+
+- On the **first launch**, `tr()` calls trigger API requests. The results are cached in memory and automatically persisted to disk after a debounce interval.
+- On **subsequent launches**, `loadCache()` restores everything instantly — **no network calls**, no loading spinners. The UI displays translated text from the very first frame.
+
+### Pre-Populated Translations
+
+Because the cache is just a JSON file, you can **ship pre-built translations** with your app. Prepare the cache file in advance with your own translations (or review and edit the AI-generated ones), and your users will never see untranslated text — even on first launch, even without network access.
+
 ## Architecture
 
 ```
@@ -112,19 +136,23 @@ context.tr('Hello')
     ▼
 TranslationController
     ├── merge global + per-text context
-    ├── check cache (per locale)
-    │     hit  → return immediately
+    ├── check in-memory cache (per locale)
+    │     hit  → return immediately (no rebuild)
     │     miss → queue for batch translation
     ▼
 TranslationBackend.translateBatch()   ← pluggable
     │
     ▼
   cache result → rebuild only affected widgets
+    │
+    ▼
+  persist to CacheStore (debounced)   ← pluggable
 ```
 
 - **Batching** — all `tr()` calls made during a single build frame are collected and sent in one API call, minimizing network overhead.  
 - **Surgical rebuild** — the controller tracks the exact `Element` that requested each translation. When a result arrives, `markNeedsBuild()` is called on those elements alone — **no `notifyListeners()`, no subtree-wide rebuild**. Widgets that already have a cached translation are never touched.  
 - **Locale-aware cache** — translations are stored per locale. Switching locales at runtime triggers re-translation only for strings not yet cached in the new locale.
+- **Disk persistence** — after each translation batch, the cache is debounce-saved via `TranslationCacheStore`. On next launch, `loadCache()` restores it before the first frame.
 
 ## API Reference
 
@@ -133,11 +161,15 @@ TranslationBackend.translateBatch()   ← pluggable
 | Class | Role |
 |---|---|
 | `TranslationProvider` | `InheritedNotifier` that provides the controller to the widget tree |
-| `TranslationController` | Manages cache, batching, and locale changes |
+| `TranslationController` | Manages cache, batching, persistence, and locale changes |
 | `TranslationBackend` | Abstract interface for pluggable translation engines |
-| `GeminiTranslationBackend` | Built-in backend powered by Google Gemini |
+| `GeminiTranslationBackend` | Built-in backend — Google Gemini |
+| `OpenAiTranslationBackend` | Built-in backend — OpenAI (and any compatible endpoint) |
+| `AnthropicTranslationBackend` | Built-in backend — Anthropic Claude |
 | `TranslationContext` | Optional context (description, meaning, glossary) to improve accuracy |
 | `GlossaryEntry` | A term + instruction pair for the translator |
+| `TranslationCacheStore` | Abstract interface for cache persistence |
+| `JsonFileCacheStore` | Built-in file-based cache store |
 
 ### Translation Functions
 
@@ -153,52 +185,58 @@ tr(context, 'Text', translationContext: TranslationContext(meaning: '...'))
 
 ## Supported Backends
 
-| Backend | Status |
-|---|---|
-| Google Gemini (`GeminiTranslationBackend`) | ✅ Built-in |
-| Custom | Implement `TranslationBackend` |
+| Backend | Service | Notes |
+|---|---|---|
+| `GeminiTranslationBackend` | Google Gemini | Default model: `gemini-2.0-flash` |
+| `OpenAiTranslationBackend` | OpenAI and other compatible services (xAI Grok, Groq, Azure OpenAI, Ollama, etc. Set `baseUrl` to any OpenAI-compatible endpoint) | Default model: `gpt-4o-mini` |
+| `AnthropicTranslationBackend` | Anthropic Claude | Default model: `claude-haiku-4-5-20251001` |
+
+Switch providers with a single line:
+
+```dart
+// Google Gemini
+backend: GeminiTranslationBackend(apiKey: '...')
+
+// OpenAI
+backend: OpenAiTranslationBackend(apiKey: '...')
+
+// Anthropic Claude
+backend: AnthropicTranslationBackend(apiKey: '...')
+
+// xAI Grok (OpenAI-compatible)
+backend: OpenAiTranslationBackend(
+  apiKey: '...',
+  model: 'grok-3-mini-fast',
+  baseUrl: 'https://api.x.ai/v1',
+)
+```
+
+All built-in backends support **structured JSON output** and **exponential backoff retry**:
+
+```dart
+backend: GeminiTranslationBackend(
+  apiKey: '...',
+  errorHandler: exponentialBackoff(maxRetries: 3),
+)
+```
 
 ### Creating a Custom Backend
 
-`TranslationBackend` is a simple abstract class with a single method to implement. You can plug in any translation API — OpenAI, Grok, Anthropic, DeepL, or even an on-device model.
+Need DeepL, an on-device model, or your own translation service? Implement `TranslationBackend` — it's a single method:
 
 ```dart
-import 'package:aitranslate/aitranslate.dart';
-
-class OpenAiTranslationBackend implements TranslationBackend {
-  final String apiKey;
-
-  OpenAiTranslationBackend({required this.apiKey});
-
+class MyCustomBackend implements TranslationBackend {
   @override
   Future<List<String>> translateBatch(
     List<TranslationRequestItem> items, {
     required String from,
     required String to,
   }) async {
-    // Build a prompt from items.
     // Each item has:
     //   item.text    — the string to translate
-    //   item.context — optional TranslationContext with description,
-    //                   meaning, and glossary
-    final prompt = items.map((item) {
-      var entry = item.text;
-      if (item.context?.meaning != null) {
-        entry += ' (meaning: ${item.context!.meaning})';
-      }
-      return entry;
-    }).toList();
-
-    // Call the OpenAI API (pseudo-code)
-    final response = await callOpenAiApi(
-      model: 'gpt-4o',
-      systemPrompt: 'Translate the following texts from $from to $to. '
-          'Return a JSON array of translated strings.',
-      userMessage: jsonEncode(prompt),
-      apiKey: apiKey,
-    );
-
-    return (jsonDecode(response) as List).cast<String>();
+    //   item.context — optional TranslationContext with
+    //                   description, meaning, and glossary
+    return items.map((item) => yourTranslate(item.text, from, to)).toList();
   }
 
   @override
@@ -206,15 +244,8 @@ class OpenAiTranslationBackend implements TranslationBackend {
 }
 ```
 
-Then pass it to `TranslationController`:
-
-```dart
-final controller = TranslationController(
-  sourceLanguage: 'en',
-  backend: OpenAiTranslationBackend(apiKey: '...'),
-);
-```
-
 ## License
+
+MIT License
 
 See [LICENSE](LICENSE) for details.
