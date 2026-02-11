@@ -1,7 +1,9 @@
 name: aitranslate
-description: "A new Flutter package project."
+description: "AI-powered Flutter i18n: code in your mother tongue, ship to every locale."
 version: 0.0.1
-homepage:
+homepage: https://github.com/kikuchy/aitranslate
+repository: https://github.com/kikuchy/aitranslate
+issue_tracker: https://github.com/kikuchy/aitranslate/issues
 
 environment:
   sdk: ^3.10.4
