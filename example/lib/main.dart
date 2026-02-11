@@ -21,6 +21,7 @@ void main() {
     ),
     backend: GeminiTranslationBackend(
       apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
+      errorHandler: exponentialBackoff(),
     ),
   );
 

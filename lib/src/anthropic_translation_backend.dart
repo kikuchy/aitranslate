@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'error_handling.dart';
 import 'translation_backend.dart';
 import 'translation_request_item.dart';
 import 'translation_utils.dart';
@@ -10,14 +11,17 @@ class AnthropicTranslationBackend implements TranslationBackend {
   final String _apiKey;
   final String _model;
   final http.Client _client;
+  final TranslationErrorHandler? _errorHandler;
 
   AnthropicTranslationBackend({
     required String apiKey,
     String model = 'claude-haiku-4-5-20251001',
     http.Client? client,
+    TranslationErrorHandler? errorHandler,
   }) : _apiKey = apiKey,
        _model = model,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _errorHandler = errorHandler;
 
   @override
   Future<List<String>> translateBatch(
@@ -69,47 +73,50 @@ class AnthropicTranslationBackend implements TranslationBackend {
 
     debugPrint('prompt: ${jsonEncode(inputEntries)}');
 
-    final url = Uri.parse('https://api.anthropic.com/v1/messages');
+    return executeWithRetry(() async {
+      final url = Uri.parse('https://api.anthropic.com/v1/messages');
 
-    final response = await _client.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': _apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: jsonEncode(requestBody),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Anthropic API request failed with status ${response.statusCode}: '
-        '${response.body}',
+      final response = await _client.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': _apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: jsonEncode(requestBody),
       );
-    }
 
-    final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
-    final content = responseJson['content'] as List<dynamic>?;
-    if (content == null || content.isEmpty) {
-      throw Exception('Failed to generate translation: no content in response');
-    }
+      if (response.statusCode != 200) {
+        throw HttpApiException(response.statusCode, response.body);
+      }
 
-    final textBlock = content.firstWhere(
-      (block) => block['type'] == 'text',
-      orElse: () => null,
-    );
-    if (textBlock == null) {
-      throw Exception(
-        'Failed to generate translation: no text block in response',
+      final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
+      final content = responseJson['content'] as List<dynamic>?;
+      if (content == null || content.isEmpty) {
+        throw Exception(
+          'Failed to generate translation: no content in response',
+        );
+      }
+
+      final textBlock = content.firstWhere(
+        (block) => block['type'] == 'text',
+        orElse: () => null,
       );
-    }
+      if (textBlock == null) {
+        throw Exception(
+          'Failed to generate translation: no text block in response',
+        );
+      }
 
-    final responseText = textBlock['text'] as String?;
-    if (responseText == null) {
-      throw Exception('Failed to generate translation: response text is null');
-    }
+      final responseText = textBlock['text'] as String?;
+      if (responseText == null) {
+        throw Exception(
+          'Failed to generate translation: response text is null',
+        );
+      }
 
-    return parseTranslationResponse(responseText, items.length);
+      return parseTranslationResponse(responseText, items.length);
+    }, _errorHandler);
   }
 
   @override

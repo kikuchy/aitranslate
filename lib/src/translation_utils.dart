@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'error_handling.dart';
 import 'translation_request_item.dart';
 
 /// Builds structured input entries from [TranslationRequestItem]s.
@@ -76,5 +77,64 @@ List<String> parseTranslationResponse(String responseText, int expectedCount) {
     throw Exception(
       'Failed to parse translation response: $e\nResponse: $responseText',
     );
+  }
+}
+
+/// An API error that carries the HTTP status code and response body.
+///
+/// Thrown by backends when the HTTP response indicates an error, so that
+/// [executeWithRetry] can extract the details for [TranslationRequestError].
+class HttpApiException implements Exception {
+  final int statusCode;
+  final String responseBody;
+
+  const HttpApiException(this.statusCode, this.responseBody);
+
+  @override
+  String toString() =>
+      'HttpApiException(status: $statusCode, body: $responseBody)';
+}
+
+/// Executes [action] with optional retry logic driven by [errorHandler].
+///
+/// If [errorHandler] is `null`, [action] runs once and any error propagates
+/// as-is. When an [errorHandler] is provided, errors are caught and the
+/// handler decides whether to retry or abort.
+Future<T> executeWithRetry<T>(
+  Future<T> Function() action,
+  TranslationErrorHandler? errorHandler,
+) async {
+  if (errorHandler == null) return action();
+
+  var attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await action();
+    } catch (e) {
+      int? statusCode;
+      String? responseBody;
+      if (e is HttpApiException) {
+        statusCode = e.statusCode;
+        responseBody = e.responseBody;
+      }
+
+      final error = TranslationRequestError(
+        statusCode: statusCode,
+        responseBody: responseBody,
+        cause: e,
+        attempt: attempt,
+      );
+
+      final recovery = await errorHandler(error);
+      switch (recovery) {
+        case RetryAction(:final delay):
+          if (delay > Duration.zero) {
+            await Future<void>.delayed(delay);
+          }
+        case AbortAction():
+          rethrow;
+      }
+    }
   }
 }

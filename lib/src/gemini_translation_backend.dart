@@ -1,22 +1,27 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'error_handling.dart';
 import 'translation_backend.dart';
 import 'translation_request_item.dart';
+import 'translation_utils.dart';
 
 /// Translation backend using the Google Gemini API via REST.
 class GeminiTranslationBackend implements TranslationBackend {
   final String _apiKey;
   final String _model;
   final http.Client _client;
+  final TranslationErrorHandler? _errorHandler;
 
   GeminiTranslationBackend({
     required String apiKey,
     String model = 'gemini-2.5-flash-lite',
     http.Client? client,
+    TranslationErrorHandler? errorHandler,
   }) : _apiKey = apiKey,
        _model = model,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _errorHandler = errorHandler;
 
   @override
   Future<List<String>> translateBatch(
@@ -84,61 +89,62 @@ class GeminiTranslationBackend implements TranslationBackend {
 
     debugPrint('prompt: ${jsonEncode(inputEntries)}');
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$_apiKey',
-    );
-
-    final response = await _client.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Gemini API request failed with status ${response.statusCode}: '
-        '${response.body}',
+    return executeWithRetry(() async {
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$_apiKey',
       );
-    }
 
-    final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
-
-    // Extract text from the response.
-    final candidates = responseJson['candidates'] as List<dynamic>?;
-    if (candidates == null || candidates.isEmpty) {
-      throw Exception(
-        'Failed to generate translation: no candidates in response',
+      final response = await _client.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
       );
-    }
 
-    final content = candidates[0]['content'] as Map<String, dynamic>?;
-    final parts = content?['parts'] as List<dynamic>?;
-    if (parts == null || parts.isEmpty) {
-      throw Exception('Failed to generate translation: no parts in response');
-    }
+      if (response.statusCode != 200) {
+        throw HttpApiException(response.statusCode, response.body);
+      }
 
-    final responseText = parts[0]['text'] as String?;
-    if (responseText == null) {
-      throw Exception('Failed to generate translation: response text is null');
-    }
+      final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
 
-    try {
-      final json = jsonDecode(responseText) as List<dynamic>;
-      final results = json.cast<String>();
-
-      if (results.length != items.length) {
-        debugPrint(
-          'Warning: Expected ${items.length} translations, '
-          'got ${results.length}',
+      // Extract text from the response.
+      final candidates = responseJson['candidates'] as List<dynamic>?;
+      if (candidates == null || candidates.isEmpty) {
+        throw Exception(
+          'Failed to generate translation: no candidates in response',
         );
       }
 
-      return results;
-    } catch (e) {
-      throw Exception(
-        'Failed to parse translation response: $e\nResponse: $responseText',
-      );
-    }
+      final content = candidates[0]['content'] as Map<String, dynamic>?;
+      final parts = content?['parts'] as List<dynamic>?;
+      if (parts == null || parts.isEmpty) {
+        throw Exception('Failed to generate translation: no parts in response');
+      }
+
+      final responseText = parts[0]['text'] as String?;
+      if (responseText == null) {
+        throw Exception(
+          'Failed to generate translation: response text is null',
+        );
+      }
+
+      try {
+        final json = jsonDecode(responseText) as List<dynamic>;
+        final results = json.cast<String>();
+
+        if (results.length != items.length) {
+          debugPrint(
+            'Warning: Expected ${items.length} translations, '
+            'got ${results.length}',
+          );
+        }
+
+        return results;
+      } catch (e) {
+        throw Exception(
+          'Failed to parse translation response: $e\nResponse: $responseText',
+        );
+      }
+    }, _errorHandler);
   }
 
   @override

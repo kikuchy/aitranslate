@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'error_handling.dart';
 import 'translation_backend.dart';
 import 'translation_request_item.dart';
 import 'translation_utils.dart';
@@ -23,18 +24,21 @@ class OpenAiTranslationBackend implements TranslationBackend {
   final String _model;
   final String _baseUrl;
   final http.Client _client;
+  final TranslationErrorHandler? _errorHandler;
 
   OpenAiTranslationBackend({
     required String apiKey,
     String model = 'gpt-4o-mini',
     String baseUrl = 'https://api.openai.com/v1',
     http.Client? client,
+    TranslationErrorHandler? errorHandler,
   }) : _apiKey = apiKey,
        _model = model,
        _baseUrl = baseUrl.endsWith('/')
            ? baseUrl.substring(0, baseUrl.length - 1)
            : baseUrl,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _errorHandler = errorHandler;
 
   @override
   Future<List<String>> translateBatch(
@@ -87,37 +91,40 @@ class OpenAiTranslationBackend implements TranslationBackend {
 
     debugPrint('prompt: ${jsonEncode(inputEntries)}');
 
-    final url = Uri.parse('$_baseUrl/chat/completions');
+    return executeWithRetry(() async {
+      final url = Uri.parse('$_baseUrl/chat/completions');
 
-    final response = await _client.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_apiKey',
-      },
-      body: jsonEncode(requestBody),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'OpenAI API request failed with status ${response.statusCode}: '
-        '${response.body}',
+      final response = await _client.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+        },
+        body: jsonEncode(requestBody),
       );
-    }
 
-    final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
-    final choices = responseJson['choices'] as List<dynamic>?;
-    if (choices == null || choices.isEmpty) {
-      throw Exception('Failed to generate translation: no choices in response');
-    }
+      if (response.statusCode != 200) {
+        throw HttpApiException(response.statusCode, response.body);
+      }
 
-    final message = choices[0]['message'] as Map<String, dynamic>?;
-    final responseText = message?['content'] as String?;
-    if (responseText == null) {
-      throw Exception('Failed to generate translation: response text is null');
-    }
+      final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
+      final choices = responseJson['choices'] as List<dynamic>?;
+      if (choices == null || choices.isEmpty) {
+        throw Exception(
+          'Failed to generate translation: no choices in response',
+        );
+      }
 
-    return parseTranslationResponse(responseText, items.length);
+      final message = choices[0]['message'] as Map<String, dynamic>?;
+      final responseText = message?['content'] as String?;
+      if (responseText == null) {
+        throw Exception(
+          'Failed to generate translation: response text is null',
+        );
+      }
+
+      return parseTranslationResponse(responseText, items.length);
+    }, _errorHandler);
   }
 
   @override
