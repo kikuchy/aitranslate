@@ -45,13 +45,29 @@ class GeminiTranslationBackend implements TranslationBackend {
       return {'text': item.text};
     }).toList();
 
+    // Collect glossary entries from all items (deduplicate by term).
+    final glossaryMap = <String, String>{};
+    for (final item in items) {
+      final glossary = item.context?.glossary;
+      if (glossary != null) {
+        for (final entry in glossary) {
+          glossaryMap[entry.term] = entry.instruction;
+        }
+      }
+    }
+
+    final glossarySection = glossaryMap.isNotEmpty
+        ? '\n\nGlossary (follow these instructions for the listed terms):\n${glossaryMap.entries.map((e) => '- "${e.key}": ${e.value}').join('\n')}'
+        : '';
+
     final prompt = [
       Content.text(
         'Translate the following texts from $from to $to. '
         'Return the result as a JSON array of translated strings, '
         'in the same order as the input. '
         'If a "context" field is provided, use it to improve '
-        'translation accuracy, but do not include it in the output.',
+        'translation accuracy, but do not include it in the output.'
+        '$glossarySection',
       ),
       Content.text(jsonEncode(inputEntries)),
     ];

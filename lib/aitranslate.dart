@@ -1,3 +1,4 @@
+export 'src/glossary_entry.dart';
 export 'src/translation_backend.dart';
 export 'src/translation_context.dart';
 export 'src/translation_controller.dart';

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'glossary_entry.dart';
+
 /// Provides additional context to improve translation accuracy.
 ///
 /// Can be used at two levels:
@@ -22,7 +24,24 @@ class TranslationContext {
   /// Use this field to disambiguate.
   final String? meaning;
 
-  const TranslationContext({this.description, this.meaning});
+  /// A glossary of terms with instructions for the translator.
+  ///
+  /// Each [GlossaryEntry] defines a term and how it should be handled
+  /// during translation. Instructions are written in the developer's
+  /// native language.
+  ///
+  /// Example:
+  /// ```dart
+  /// TranslationContext(
+  ///   glossary: [
+  ///     GlossaryEntry(term: 'Flutter', instruction: 'Library name, do not translate'),
+  ///     GlossaryEntry(term: 'Firebase', instruction: 'Service name, do not translate'),
+  ///   ],
+  /// )
+  /// ```
+  final List<GlossaryEntry>? glossary;
+
+  const TranslationContext({this.description, this.meaning, this.glossary});
 
   /// Returns a stable, canonical string representation for hashing.
   ///
@@ -30,8 +49,16 @@ class TranslationContext {
   /// across app restarts (unlike [hashCode]).
   String toStableString() {
     // Use a sorted JSON-like format for deterministic output.
-    final parts = <String, String>{};
+    final parts = <String, dynamic>{};
     if (description != null) parts['d'] = description!;
+    if (glossary != null && glossary!.isNotEmpty) {
+      // Sort by term for deterministic output.
+      final sorted = List<GlossaryEntry>.from(glossary!)
+        ..sort((a, b) => a.term.compareTo(b.term));
+      parts['g'] = sorted
+          .map((e) => {'t': e.term, 'i': e.instruction})
+          .toList();
+    }
     if (meaning != null) parts['m'] = meaning!;
     return jsonEncode(parts);
   }
@@ -42,14 +69,26 @@ class TranslationContext {
       other is TranslationContext &&
           runtimeType == other.runtimeType &&
           description == other.description &&
-          meaning == other.meaning;
+          meaning == other.meaning &&
+          _glossaryEquals(glossary, other.glossary);
+
+  static bool _glossaryEquals(List<GlossaryEntry>? a, List<GlossaryEntry>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
-  int get hashCode => Object.hash(description, meaning);
+  int get hashCode =>
+      Object.hash(description, meaning, Object.hashAll(glossary ?? const []));
 
   @override
   String toString() =>
-      'TranslationContext(description: $description, meaning: $meaning)';
+      'TranslationContext(description: $description, meaning: $meaning, glossary: $glossary)';
 }
 
 /// Computes a stable hash string for a given input.

@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
+import 'glossary_entry.dart';
 import 'translation_backend.dart';
 import 'translation_context.dart';
 import 'translation_request_item.dart';
@@ -81,10 +82,24 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
   /// If both are null, returns null.
   /// If only one is provided, returns that one.
   /// If both are provided, merges their fields (per-text takes precedence).
+  /// For glossaries, local entries override global entries with the same term.
   TranslationContext? _mergeContext(TranslationContext? local) {
     if (_globalContext == null && local == null) return null;
     if (_globalContext == null) return local;
     if (local == null) return _globalContext;
+
+    // Merge glossaries: start with global, override with local by term.
+    List<GlossaryEntry>? mergedGlossary;
+    if (_globalContext.glossary != null || local.glossary != null) {
+      final byTerm = <String, GlossaryEntry>{};
+      for (final entry in _globalContext.glossary ?? <GlossaryEntry>[]) {
+        byTerm[entry.term] = entry;
+      }
+      for (final entry in local.glossary ?? <GlossaryEntry>[]) {
+        byTerm[entry.term] = entry;
+      }
+      mergedGlossary = byTerm.values.toList();
+    }
 
     // Merge: local fields take precedence, fall back to global.
     return TranslationContext(
@@ -93,6 +108,7 @@ class TranslationController extends ChangeNotifier with WidgetsBindingObserver {
         if (local.description != null) local.description!,
       ].join(' / '),
       meaning: local.meaning ?? _globalContext.meaning,
+      glossary: mergedGlossary,
     );
   }
 

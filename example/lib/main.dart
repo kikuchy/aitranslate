@@ -6,7 +6,19 @@ void main() {
 
   final controller = TranslationController(
     sourceLanguage: 'en',
-    globalContext: TranslationContext(description: 'Flutter Demo App'),
+    globalContext: TranslationContext(
+      description: 'Flutter Demo App',
+      glossary: [
+        GlossaryEntry(
+          term: 'Flutter',
+          instruction: 'Name of a framework, do not translate',
+        ),
+        GlossaryEntry(
+          term: 'Dart',
+          instruction: 'Programming language name, do not translate',
+        ),
+      ],
+    ),
     backend: GeminiTranslationBackend(
       apiKey: const String.fromEnvironment('GEMINI_API_KEY'),
     ),
