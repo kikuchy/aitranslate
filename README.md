@@ -19,7 +19,7 @@ Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text wi
 
 ## Example
 
-![Auto-translating example](docs/auto_translating_example.gif)
+<img src="docs/auto_translating_example.gif" alt="Auto-translating example" width="400">
 
 See [example](example). There are no pre-translated labels in Japanese, Chinese, Korean, or any other language!
 No need to build translation files or maintain them at all!
