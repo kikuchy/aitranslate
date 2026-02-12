@@ -17,6 +17,14 @@ Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text wi
 | Translations lost on restart | Cache persisted to disk; instant display on relaunch |
 | Locked into one translation service | Swap backends (Gemini, OpenAI, Anthropic…) with one line |
 
+## Example
+
+![Auto-translating example](docs/auto_translating_example.gif)
+
+See [example](example). There are no pre-translated labels in Japanese, Chinese, Korean, or any other language!
+No need to build translation files or maintain them at all!
+
+
 ## Quick Start
 
 ```yaml
