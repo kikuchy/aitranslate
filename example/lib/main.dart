@@ -1,6 +1,8 @@
 import 'package:aitranslate/aitranslate.dart';
 import 'package:flutter/material.dart';
 
+import 'translation_samples_page.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -77,30 +79,18 @@ class _MyHomePageState extends State<MyHomePage> {
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
-            SizedBox(height: 20),
-
-            // Description examples
-
-            // expected: "住所:" in Japanese
-            Text(
-              context.tr(
-                'Address:',
-                translationContext: TranslationContext(
-                  description: 'Address label',
-                  meaning: 'The place where you live',
-                ),
-              ),
-            ),
-            // expected: "アドレス:" in Japanese
-            Text(
-              context.tr(
-                'Address:',
-                translationContext: TranslationContext(
-                  description: 'Address label',
-                  meaning:
-                      'A unique identifier (a reference) that points to the location in memory',
-                ),
-              ),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const TranslationSamplesPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.translate),
+              label: Text(context.tr('Translation Samples')),
             ),
           ],
         ),
