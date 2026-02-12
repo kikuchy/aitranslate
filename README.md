@@ -19,7 +19,7 @@ Instead of `.arb` files, spreadsheets, or manual `Intl` wiring, you wrap text wi
 
 ## Example
 
-<img src="docs/auto_translating_example.gif" alt="Auto-translating example" width="400">
+<img src="doc/auto_translating_example.gif" alt="Auto-translating example" width="400">
 
 See [example](example). There are no pre-translated labels in Japanese, Chinese, Korean, or any other language!
 No need to build translation files or maintain them at all!
@@ -27,9 +27,8 @@ No need to build translation files or maintain them at all!
 
 ## Quick Start
 
-```yaml
-dependencies:
-  aitranslate: ^0.0.1
+```bash
+flutter pub add aitranslate
 ```
 
 ```dart
